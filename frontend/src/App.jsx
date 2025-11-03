@@ -8,7 +8,7 @@ import PostsList from "./components/PostsList";
 import ThemeToggle from "./components/ThemeToggle";
 
 function App() {
-  const [results, setResults] = useState({ reddit: [], mastodon: [], all_posts: [] });
+  const [results, setResults] = useState({ reddit: [], mastodon: [], youtube: [], all_posts: [] });
   const [loading, setLoading] = useState(false);
 
   const analyzeTopic = async (topic) => {
@@ -35,14 +35,10 @@ function App() {
 
       <InputForm onAnalyze={analyzeTopic} loading={loading} />
 
-      {hasResults && (
-        <>
-          <StatsCard all_posts={results.all_posts} />
-          <EmotionPieChart all_posts={results.all_posts} />
-          <EmotionBarChart all_posts={results.all_posts} />
-          <PostsList results={results} />
-        </>
-      )}
+      <StatsCard all_posts={results.all_posts} loading={loading} />
+      <EmotionPieChart all_posts={results.all_posts} loading={loading} />
+      <EmotionBarChart all_posts={results.all_posts} loading={loading} />
+      <PostsList results={results} loading={loading} />
     </div>
   );
 }

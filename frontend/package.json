@@ -10,6 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/material": "^7.3.4",
     "@radix-ui/react-slot": "^1.2.3",
     "@tailwindcss/vite": "^4.1.15",
     "axios": "^1.12.2",
@@ -18,7 +21,9 @@
     "framer-motion": "^12.23.24",
     "lucide-react": "^0.546.0",
     "react": "^19.1.1",
+    "react-autosuggest-2": "^1.0.2",
     "react-dom": "^19.1.1",
+    "react-loadly": "^2.2.0",
     "react-social-icons": "^6.25.0",
     "recharts": "^3.3.0",
     "shadcn-ui": "^0.9.5",

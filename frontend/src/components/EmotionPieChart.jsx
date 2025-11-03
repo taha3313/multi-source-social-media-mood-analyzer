@@ -1,9 +1,10 @@
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AutoSkeletonLoader } from "react-loadly";
 
 const COLORS = ["#6366F1", "#F59E0B", "#EF4444", "#10B981", "#8B5CF6", "#3B82F6", "#A78BFA"];
 
-export default function EmotionPieChart({ all_posts: results }) {
+export default function EmotionPieChart({ all_posts: results, loading }) {
   // Aggregate data and include "Other" slice
   let data = Object.entries(
     results.reduce((acc, r) => {
@@ -46,30 +47,35 @@ export default function EmotionPieChart({ all_posts: results }) {
   };
 
   return (
-    <Card className="shadow-sm">
-      <CardHeader>
-        <CardTitle>Emotion Distribution (Weighted by Reactions)</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={300}>
-          <PieChart>
-            <Pie
-              data={data}
-              dataKey="value"
-              outerRadius={100}
-              label={renderLabel}
-              labelLine
-              isAnimationActive
-            >
-              {data.map((_, index) => (
-                <Cell key={index} fill={COLORS[index % COLORS.length]} />
-              ))}
-            </Pie>
-            <Tooltip formatter={(value) => value.toFixed(0)} />
-            <Legend />
-          </PieChart>
-        </ResponsiveContainer>
-      </CardContent>
-    </Card>
+    <AutoSkeletonLoader
+      loading={loading}
+      component={
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle>Emotion Distribution (Weighted by Reactions)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={data}
+                  dataKey="value"
+                  outerRadius={100}
+                  label={renderLabel}
+                  labelLine
+                  isAnimationActive
+                >
+                  {data.map((_, index) => (
+                    <Cell key={index} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value) => value.toFixed(0)} />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      }
+    />
   );
 }

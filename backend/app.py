@@ -321,3 +321,42 @@ async def analyze_topic(req: TopicRequest):
 @app.get("/health")
 async def health():
     return {"status": "OK"}
+
+
+# -----------------------------
+# Trending Topics Endpoint
+# -----------------------------
+@app.get("/trending")
+async def get_trending_topics(limit: int = 10):
+    trending_topics = set()
+
+    # --- Reddit Trending (hot posts titles) ---
+    try:
+        for submission in reddit.subreddit("all").hot(limit=limit * 3):
+            title = submission.title.strip()
+            if len(title.split()) <= 6:  # simple heuristic: short topics
+                trending_topics.add(title)
+    except Exception as e:
+        print("Reddit trending error:", e)
+
+    # --- YouTube Trending (optional if quota allows) ---
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            params = {
+                "part": "snippet",
+                "chart": "mostPopular",
+                "regionCode": "US",
+                "maxResults": limit,
+                "key": YOUTUBE_API_KEY,
+            }
+            r = client.get("https://www.googleapis.com/youtube/v3/videos", params=params)
+            r.raise_for_status()
+            for item in r.json().get("items", []):
+                trending_topics.add(item["snippet"]["title"])
+    except Exception as e:
+        print("YouTube trending error:", e)
+
+    # --- Return combined & cleaned list ---
+    topics_cleaned = list(trending_topics)
+    topics_cleaned = [t[:80] for t in topics_cleaned]  # truncate long ones
+    return {"trending": topics_cleaned[:limit]}
