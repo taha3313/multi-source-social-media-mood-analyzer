@@ -1,5 +1,5 @@
 import { useState } from "react";
-import axios from "axios";
+import { api } from "./lib/api";
 import InputForm from "./components/InputForm";
 import StatsCard from "./components/StatsCard";
 import EmotionPieChart from "./components/EmotionPieChart";
@@ -10,19 +10,20 @@ import ThemeToggle from "./components/ThemeToggle";
 function App() {
   const [results, setResults] = useState({ reddit: [], mastodon: [], youtube: [], all_posts: [] });
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const analyzeTopic = async (topic) => {
     setLoading(true);
+    setError("");
     try {
-      const res = await axios.post("http://localhost:8000/analyze", { topic });
+      const res = await api.post("/analyze", { topic });
       setResults(res.data.results);
     } catch (err) {
-      console.error(err);
+      setError(err.response?.data?.detail || "Analysis failed. Please try again shortly.");
     }
     setLoading(false);
   };
 
-  const hasResults = results.reddit.length + results.mastodon.length > 0;
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition">
@@ -34,6 +35,8 @@ function App() {
       </header>
 
       <InputForm onAnalyze={analyzeTopic} loading={loading} />
+
+      {error && <p role="alert" className="p-4 text-red-600">{error}</p>}
 
       <StatsCard all_posts={results.all_posts} loading={loading} />
       <EmotionPieChart all_posts={results.all_posts} loading={loading} />

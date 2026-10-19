@@ -1,6 +1,6 @@
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AutoSkeletonLoader } from "react-loadly";
+import LoadingContent from "./LoadingContent";
 
 const COLORS = ["#6366F1", "#F59E0B", "#EF4444", "#10B981", "#8B5CF6", "#3B82F6", "#A78BFA"];
 
@@ -47,7 +47,7 @@ export default function EmotionPieChart({ all_posts: results, loading }) {
   };
 
   return (
-    <AutoSkeletonLoader
+    <LoadingContent
       loading={loading}
       component={
         <Card className="shadow-sm">

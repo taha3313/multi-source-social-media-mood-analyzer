@@ -1,0 +1,28 @@
+[project]
+name = "social-mood-analyzer-api"
+version = "0.1.0"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "fastapi==0.115.2", "uvicorn==0.23.2", "transformers==4.44.2",
+  "torch==2.2.2", "numpy==1.26.4", "pydantic==2.6.0",
+  "python-dotenv==1.0.0", "praw==7.8.1", "Mastodon.py==2.1.4",
+  "sentence-transformers==3.0.1", "beautifulsoup4==4.12.3", "httpx==0.27.2",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<9", "ruff>=0.11,<0.12"]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

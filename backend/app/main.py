@@ -1,8 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from transformers import pipeline
-from sentence_transformers import SentenceTransformer, util
+from pydantic import BaseModel, Field
 from mastodon import Mastodon
 from bs4 import BeautifulSoup
 import praw
@@ -10,6 +8,7 @@ import asyncio
 import os
 import math
 import time
+import threading
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 import httpx
@@ -24,7 +23,9 @@ app = FastAPI(title="Multi-Source Social Media Mood Analyzer")
 # -----------------------------
 # CORS
 # -----------------------------
-origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+origins = [origin.strip() for origin in os.getenv(
+    "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+).split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -37,8 +38,8 @@ app.add_middleware(
 # Models
 # -----------------------------
 class TopicRequest(BaseModel):
-    topic: str
-    limit: int = 20  # posts returned to frontend
+    topic: str = Field(min_length=1, max_length=200, pattern=r"\S")
+    limit: int = Field(default=20, ge=3, le=200)
 
 # -----------------------------
 # Device Setup
@@ -49,15 +50,32 @@ device_str = "cuda" if use_gpu else "cpu"
 # -----------------------------
 # AI Models
 # -----------------------------
-embedding_model = SentenceTransformer("all-MiniLM-L6-v2", device=device_str)
+embedding_model = None
+emotion_classifier = None
+util = None
+model_lock = threading.Lock()
+analysis_lock = asyncio.Lock()
 
-emotion_classifier = pipeline(
-    "text-classification",
-    model="j-hartmann/emotion-english-distilroberta-base",
-    top_k=None,
-    truncation=True,
-    device=0 if use_gpu else -1,
-)
+
+def load_models():
+    """Load once, on demand, so probes do not download models or require credentials."""
+    global embedding_model, emotion_classifier, util
+    with model_lock:
+        if embedding_model is not None and emotion_classifier is not None:
+            return
+        from sentence_transformers import SentenceTransformer, util as similarity_util
+        from transformers import pipeline
+        import torch
+
+        torch.set_num_threads(int(os.getenv("INFERENCE_THREADS", "2")))
+        embedding_model = SentenceTransformer("all-MiniLM-L6-v2", device=device_str)
+        emotion_classifier = pipeline(
+            "text-classification",
+            model="j-hartmann/emotion-english-distilroberta-base",
+            top_k=None, truncation=True, device=0 if use_gpu else -1,
+        )
+        util = similarity_util
+
 
 # -----------------------------
 # Reddit Setup
@@ -65,16 +83,19 @@ emotion_classifier = pipeline(
 reddit = praw.Reddit(
     client_id=os.getenv("REDDIT_CLIENT_ID"),
     client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
-    user_agent=os.getenv("REDDIT_USER_AGENT"),
-)
+    user_agent=os.getenv("REDDIT_USER_AGENT", "mood-analyzer/1.0"),
+    timeout=20,
+    check_for_async=False,
+) if os.getenv("REDDIT_CLIENT_ID") and os.getenv("REDDIT_CLIENT_SECRET") else None
 
 # -----------------------------
 # Mastodon Setup
 # -----------------------------
 mastodon = Mastodon(
     access_token=os.getenv("MASTODON_ACCESS_TOKEN"),
-    api_base_url=os.getenv("MASTODON_BASE_URL"),
-)
+    api_base_url=os.getenv("MASTODON_BASE_URL", "https://mastodon.social"),
+    request_timeout=20,
+) if os.getenv("MASTODON_ACCESS_TOKEN") else None
 
 # -----------------------------
 # YouTube Setup (HTTPX)
@@ -106,6 +127,8 @@ def expand_topic_semantically(topic: str, max_terms: int = 6):
 # -----------------------------
 def fetch_reddit_posts(topic: str, limit: int = 100):
     posts = []
+    if reddit is None:
+        return posts
     try:
         for submission in reddit.subreddit("all").search(
             topic,
@@ -122,11 +145,13 @@ def fetch_reddit_posts(topic: str, limit: int = 100):
                     "url": f"https://reddit.com{submission.permalink}"
                 })
     except Exception as e:
-        print("Reddit fetch error:", e)
+        print("Reddit fetch error:", type(e).__name__)
     return posts
 
 def fetch_mastodon_posts(topic: str, limit: int = 50):
     posts = []
+    if mastodon is None:
+        return posts
     try:
         results = mastodon.timeline_hashtag(topic, limit=limit)
         for status in results:
@@ -142,11 +167,13 @@ def fetch_mastodon_posts(topic: str, limit: int = 50):
         if not posts:
             print(f"No Mastodon posts found for #{topic} in the last 24h.")
     except Exception as e:
-        print("Mastodon fetch error:", e)
+        print("Mastodon fetch error:", type(e).__name__)
     return posts
 
 def fetch_youtube_comments_for_topic(topic: str, max_videos: int = 3, max_comments: int = 50, min_similarity: float = 0.3):
     posts = []
+    if not YOUTUBE_API_KEY:
+        return posts
     try:
         with httpx.Client(timeout=30.0) as client:
             # Search videos
@@ -193,7 +220,7 @@ def fetch_youtube_comments_for_topic(topic: str, max_videos: int = 3, max_commen
                             "similarity": round(sim, 3)
                         })
     except Exception as e:
-        print("YouTube fetch error:", e)
+        print("YouTube fetch error:", type(e).__name__)
     return posts
 
 # -----------------------------
@@ -241,7 +268,7 @@ async def analyze_posts_batch(posts, batch_size=32):
     results = []
     for i in range(0, len(texts), batch_size):
         batch = texts[i:i+batch_size]
-        batch_scores = emotion_classifier(batch)
+        batch_scores = await asyncio.to_thread(emotion_classifier, batch)
         for p, scores in zip(posts[i:i+batch_size], batch_scores):
             scores.sort(key=lambda x: x["score"], reverse=True)
             p["top_emotion"] = scores[0]["label"]
@@ -255,6 +282,16 @@ async def analyze_posts_batch(posts, batch_size=32):
 # -----------------------------
 @app.post("/analyze")
 async def analyze_topic(req: TopicRequest):
+    if not any((reddit, mastodon, YOUTUBE_API_KEY)):
+        raise HTTPException(status_code=503, detail="No social sources configured. Add API credentials on the server.")
+    if analysis_lock.locked():
+        raise HTTPException(status_code=503, detail="Another analysis is running. Try again shortly.")
+    async with analysis_lock:
+        await asyncio.to_thread(load_models)
+        return await run_analysis(req)
+
+
+async def run_analysis(req: TopicRequest):
     start_time = time.time()
 
     search_terms = expand_topic_semantically(req.topic)
@@ -266,14 +303,14 @@ async def analyze_topic(req: TopicRequest):
 
     analyzed = await analyze_posts_batch(posts, batch_size=32)
 
-    topic_vec = embedding_model.encode(req.topic, convert_to_tensor=True, show_progress_bar=False)
-    post_vecs = embedding_model.encode([p["text"] for p in analyzed], convert_to_tensor=True, show_progress_bar=False)
-    sims = util.cos_sim(post_vecs, topic_vec).squeeze().cpu().numpy()
+    topic_vec = await asyncio.to_thread(embedding_model.encode, req.topic, convert_to_tensor=True, show_progress_bar=False)
+    post_vecs = await asyncio.to_thread(embedding_model.encode, [p["text"] for p in analyzed], convert_to_tensor=True, show_progress_bar=False)
+    sims = util.cos_sim(post_vecs, topic_vec).reshape(-1).cpu().numpy()
 
     for post, sim in zip(analyzed, sims):
         post["similarity"] = round(float(post.get("similarity", sim)), 3)
         post["score_weighted"] = round(
-            post["top_confidence"] * (1 + math.log(post["likes"] + 2)) * (0.5 + float(post["similarity"])),
+            post["top_confidence"] * (1 + math.log(max(0, post["likes"]) + 2)) * (0.5 + float(post["similarity"])),
             3,
         )
 
@@ -285,7 +322,7 @@ async def analyze_topic(req: TopicRequest):
     emotion_weights = {}
     for p in analyzed:
         e = p["top_emotion"]
-        weight = p["top_confidence"] * math.log(p["likes"] + 2)
+        weight = p["top_confidence"] * math.log(max(0, p["likes"]) + 2)
         emotion_weights[e] = emotion_weights.get(e, 0) + weight
 
     total_weight = sum(emotion_weights.values()) or 1
@@ -320,27 +357,36 @@ async def analyze_topic(req: TopicRequest):
 # -----------------------------
 @app.get("/health")
 async def health():
-    return {"status": "OK"}
+    return {
+        "status": "OK",
+        "models_loaded": embedding_model is not None and emotion_classifier is not None,
+        "configured_sources": [name for name, enabled in (
+            ("reddit", reddit is not None), ("mastodon", mastodon is not None),
+            ("youtube", bool(YOUTUBE_API_KEY)),
+        ) if enabled],
+    }
 
 
 # -----------------------------
 # Trending Topics Endpoint
 # -----------------------------
 @app.get("/trending")
-async def get_trending_topics(limit: int = 10):
+def get_trending_topics(limit: int = Query(default=10, ge=1, le=50)):
     trending_topics = set()
 
     # --- Reddit Trending (hot posts titles) ---
     try:
-        for submission in reddit.subreddit("all").hot(limit=limit * 3):
+        for submission in (reddit.subreddit("all").hot(limit=limit * 3) if reddit else []):
             title = submission.title.strip()
             if len(title.split()) <= 6:  # simple heuristic: short topics
                 trending_topics.add(title)
     except Exception as e:
-        print("Reddit trending error:", e)
+        print("Reddit trending error:", type(e).__name__)
 
     # --- YouTube Trending (optional if quota allows) ---
     try:
+        if not YOUTUBE_API_KEY:
+            return {"trending": sorted(trending_topics)[:limit]}
         with httpx.Client(timeout=10.0) as client:
             params = {
                 "part": "snippet",
@@ -354,7 +400,7 @@ async def get_trending_topics(limit: int = 10):
             for item in r.json().get("items", []):
                 trending_topics.add(item["snippet"]["title"])
     except Exception as e:
-        print("YouTube trending error:", e)
+        print("YouTube trending error:", type(e).__name__)
 
     # --- Return combined & cleaned list ---
     topics_cleaned = list(trending_topics)

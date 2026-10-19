@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SocialIcon } from "react-social-icons";
-import { AutoSkeletonLoader } from "react-loadly";
+import LoadingContent from "./LoadingContent";
 
 export default function StatsCard({ all_posts: allposts, loading }) {
   const total = allposts.length;
@@ -28,7 +28,7 @@ export default function StatsCard({ all_posts: allposts, loading }) {
     : 0;
 
   return (
-    <AutoSkeletonLoader
+    <LoadingContent
       loading={loading}
       component={(
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">

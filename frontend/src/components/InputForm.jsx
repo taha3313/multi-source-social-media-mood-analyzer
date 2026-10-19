@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
 import { Autocomplete, TextField } from "@mui/material";
-import axios from "axios";
+import { api } from "../lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { SpinLoader  } from "react-loadly";
 
 export default function InputForm({ onAnalyze, loading }) {
   const [topic, setTopic] = useState("");
@@ -13,7 +12,7 @@ export default function InputForm({ onAnalyze, loading }) {
   useEffect(() => {
     const fetchTrending = async () => {
       try {
-        const res = await axios.get("http://localhost:8000/trending");
+        const res = await api.get("/trending");
         setTrending(res.data.trending || []);
       } catch (err) {
         console.error("Error fetching trending topics:", err);
@@ -62,7 +61,7 @@ export default function InputForm({ onAnalyze, loading }) {
           </div>
 
           <Button type="submit" disabled={loading}>
-            {loading ? <SpinLoader  /> : "Analyze"}
+            {loading ? "Analyzing…" : "Analyze"}
           </Button>
         </form>
       </CardContent>

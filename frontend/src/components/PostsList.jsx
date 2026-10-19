@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SocialIcon } from "react-social-icons";
-import { AutoSkeletonLoader } from "react-loadly";
+import LoadingContent from "./LoadingContent";
 
 export default function PostsList({ results, loading }) {
   const allPosts = [...results.reddit, ...results.mastodon, ...results.youtube];
@@ -13,7 +13,7 @@ export default function PostsList({ results, loading }) {
   };
 
   return (
-    <AutoSkeletonLoader
+    <LoadingContent
       loading={loading}
       component={
         <Card className="mt-6 shadow-lg border border-gray-200 dark:border-gray-700">

@@ -1,6 +1,6 @@
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AutoSkeletonLoader } from "react-loadly";
+import LoadingContent from "./LoadingContent";
 
 export default function EmotionBarChart({ all_posts: results, loading }) {
   const emotionStats = {};
@@ -16,7 +16,7 @@ export default function EmotionBarChart({ all_posts: results, loading }) {
   });
 
   return (
-    <AutoSkeletonLoader
+    <LoadingContent
       loading={loading}
       component={
         <Card className="shadow-sm">
